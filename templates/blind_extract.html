@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blind Watermark Extraction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Extract Watermark</h1>
+        <form id="blindExtractForm" enctype="multipart/form-data">
+            <label for="watermarkedOnly">Watermarked Image:</label><br>
+            <input type="file" id="watermarkedOnly" name="watermarkedOnly" accept="image/*" required><br>
+            <button type="submit">Upload and Extract Watermark</button>
+        </form>
+
+        <div id="results" style="display:none;">
+            <h2>Extracted Watermark:</h2>
+            <img id="extractedWatermark" alt="Extracted Watermark">
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('blindExtractForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            var formData = new FormData();
+            var watermarkedOnlyFile = document.getElementById('watermarkedOnly').files[0];
+            formData.append('watermarkedOnly', watermarkedOnlyFile);
+
+            fetch('/blind_extract', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    console.log("Extracted watermark base64:", data.extracted_watermark);  // Check the base64 string in the console
+                    document.getElementById('extractedWatermark').src = 'data:image/png;base64,' + data.extracted_watermark;
+                    document.getElementById('results').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    </script>
+</body>
+</html>

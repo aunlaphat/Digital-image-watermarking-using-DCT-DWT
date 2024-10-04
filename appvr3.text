@@ -1,0 +1,167 @@
+from flask import Flask, request, jsonify, render_template
+import cv2
+import numpy as np
+import pywt
+import base64
+
+app = Flask(__name__)
+
+# ฟังก์ชัน Resize ลายน้ำให้ตรงกับขนาดของ LL จาก DWT
+def resize_watermark_to_LL(LL, watermark_img):
+    LL_height, LL_width = LL.shape
+    watermark_resized = cv2.resize(watermark_img, (LL_width, LL_height), interpolation=cv2.INTER_CUBIC)
+    return watermark_resized
+
+# ฟังก์ชันการทำ DCT
+def apply_dct(block):
+    block_float = np.float32(block)
+    return cv2.dct(block_float)
+
+# ฟังก์ชันการทำ inverse DCT
+def inverse_dct(block):
+    return cv2.idct(block)
+
+# ฟังก์ชันการฝังลายน้ำด้วย DWT-DCT
+def embed_watermark_dwt_dct(original_img, watermark_img, alpha=0.075):
+    channels = cv2.split(original_img)
+    watermarked_channels = []
+    
+    for channel in channels:
+        coeffs = pywt.dwt2(channel, 'haar')
+        LL, (LH, HL, HH) = coeffs
+
+        dct_LL = apply_dct(LL)
+        watermark_img_resized = resize_watermark_to_LL(LL, watermark_img)
+        watermark_dct = apply_dct(cv2.cvtColor(watermark_img_resized, cv2.COLOR_RGB2GRAY))
+
+        watermarked_dct_LL = dct_LL + alpha * watermark_dct
+        watermarked_LL = inverse_dct(watermarked_dct_LL)
+        watermarked_channel = pywt.idwt2((watermarked_LL, (LH, HL, HH)), 'haar')
+        watermarked_channels.append(np.uint8(np.clip(watermarked_channel, 0, 255)))
+
+    return cv2.merge(watermarked_channels)
+
+# ฟังก์ชันการถอดลายน้ำ
+def extract_watermark_dwt_dct(watermarked_img, original_img, alpha=0.075):
+    channels_w = cv2.split(watermarked_img)
+    channels_o = cv2.split(original_img)
+    extracted_channels = []
+
+    for channel_w, channel_o in zip(channels_w, channels_o):
+        coeffs_w = pywt.dwt2(channel_w, 'haar')
+        coeffs_o = pywt.dwt2(channel_o, 'haar')
+        LL_w, (LH_w, HL_w, HH_w) = coeffs_w
+        LL_o, (LH_o, HL_o, HH_o) = coeffs_o
+        
+        dct_LL_w = apply_dct(LL_w)
+        dct_LL_o = apply_dct(LL_o)
+        
+        watermark_dct = (dct_LL_w - dct_LL_o) / alpha
+        extracted_watermark = inverse_dct(watermark_dct)
+
+        extracted_watermark = cv2.normalize(extracted_watermark, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+        
+        extracted_channels.append(np.uint8(np.clip(extracted_watermark, 0, 255)))
+
+    return cv2.merge(extracted_channels)
+
+# ฟังก์ชันการถอดลายน้ำแบบ Blind โดยไม่มีภาพต้นฉบับ
+def blind_watermark_extraction(watermarked_img, alpha=0.075):
+    channels = cv2.split(watermarked_img)
+    extracted_channels = []
+
+    for channel in channels:
+        coeffs = pywt.dwt2(channel, 'haar')
+        LL, (LH, HL, HH) = coeffs
+
+        # วิเคราะห์ HH เพื่อหาสัญญาณลายน้ำ (Blind extraction)
+        dct_HH = apply_dct(HH)
+        extracted_watermark_dct = dct_HH / alpha  # วิเคราะห์สัญญาณลายน้ำ
+        extracted_watermark = inverse_dct(extracted_watermark_dct)
+
+        extracted_watermark = cv2.normalize(extracted_watermark, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+        extracted_channels.append(np.uint8(np.clip(extracted_watermark, 0, 255)))
+
+    return cv2.merge(extracted_channels)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+# Route สำหรับการถอดลายน้ำแบบ Blind
+@app.route('/blind_extract', methods=['POST'])
+def blind_extract():
+    watermarked_file = request.files.get('watermarkedOnly')
+    if not watermarked_file:
+        print("No watermarked image uploaded.")
+        return jsonify({'error': 'No watermarked image uploaded'}), 400
+
+    watermarked_img = np.frombuffer(watermarked_file.read(), np.uint8)
+    watermarked_img = cv2.imdecode(watermarked_img, cv2.IMREAD_COLOR)
+
+    # Test to check if the image is correctly read
+    print("Watermarked image shape:", watermarked_img.shape)
+
+    extracted_watermark = blind_watermark_extraction(watermarked_img)
+
+    # Test to see if watermark extraction is successful
+    print("Extracted watermark shape:", extracted_watermark.shape)
+
+    _, extracted_watermark_encoded = cv2.imencode('.png', extracted_watermark)
+    extracted_watermark_base64 = base64.b64encode(extracted_watermark_encoded).decode('utf-8')
+
+    print("Extracted watermark base64 string:", extracted_watermark_base64[:50])  # Show first 50 characters for debugging
+
+    return jsonify({
+        'extracted_watermark': extracted_watermark_base64
+    })
+
+@app.route('/upload', methods=['POST'])
+def upload_files():
+    if 'original' not in request.files and 'watermark' not in request.files:
+        print("No file part.")
+        return jsonify({'error': 'No file part'}), 400
+    
+    original_file = request.files.get('original')
+    watermark_file = request.files['watermark']
+
+    watermark_img = cv2.imdecode(np.frombuffer(watermark_file.read(), np.uint8), cv2.IMREAD_COLOR)
+    watermark_img_rgb = cv2.cvtColor(watermark_img, cv2.COLOR_BGR2RGB)
+
+    print("Watermark image shape:", watermark_img_rgb.shape)
+
+    if original_file:
+        original_img = cv2.imdecode(np.frombuffer(original_file.read(), np.uint8), cv2.IMREAD_COLOR)
+        original_img_rgb = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
+
+        print("Original image shape:", original_img_rgb.shape)
+
+        # ฝังลายน้ำ
+        watermarked_img = embed_watermark_dwt_dct(original_img_rgb, watermark_img_rgb)
+
+        # ถอดลายน้ำ
+        extracted_watermark = extract_watermark_dwt_dct(watermarked_img, original_img_rgb)
+
+    else:
+        watermarked_img = watermark_img_rgb
+        extracted_watermark = blind_watermark_extraction(watermarked_img)
+
+    _, watermarked_img_bytes = cv2.imencode('.png', watermarked_img)
+    _, extracted_watermark_bytes = cv2.imencode('.png', extracted_watermark)
+
+    watermarked_image_base64 = base64.b64encode(watermarked_img_bytes).decode('utf-8')
+    extracted_watermark_base64 = base64.b64encode(extracted_watermark_bytes).decode('utf-8')
+
+    print("Watermarked image base64 string:", watermarked_image_base64[:50])
+    print("Extracted watermark base64 string:", extracted_watermark_base64[:50])
+
+    return jsonify({
+        'watermarked_image': watermarked_image_base64,
+        'extracted_watermark': extracted_watermark_base64
+    })
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

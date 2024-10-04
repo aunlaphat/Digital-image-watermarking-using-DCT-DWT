@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extract Watermark</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>ทดสอบการถอดลายน้ำ</h1>
+    <form id="extractForm" enctype="multipart/form-data">
+        <label for="watermarked">อัพโหลดภาพที่มีลายน้ำ:</label>
+        <input type="file" name="watermarked" accept="image/*" required>
+        <button type="submit">ถอดลายน้ำ</button>
+    </form>
+
+    <h2>ลายน้ำที่ถอดได้:</h2>
+    <img id="extractedWatermark" src="" alt="Extracted Watermark" style="display:none;">
+
+    <script>
+        document.getElementById('extractForm').onsubmit = async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch('/extract', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const extractedImage = document.getElementById('extractedWatermark');
+                extractedImage.src = `data:image/png;base64,${data.extracted_watermark}`;
+                extractedImage.style.display = 'block';
+            } else {
+                alert('เกิดข้อผิดพลาดในการถอดลายน้ำ');
+            }
+        };
+    </script>
+</body>
+</html>

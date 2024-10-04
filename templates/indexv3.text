@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watermark Embedding and Extraction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Watermark Embedding and Extraction</h1>
+
+        <!-- ฟอร์มสำหรับการฝังลายน้ำ -->
+        <form id="watermarkForm" enctype="multipart/form-data">
+            <label for="original">Original Image (optional):</label><br>
+            <input type="file" id="original" name="original" accept="image/*"><br>
+            
+            <label for="watermark">Watermarked Image:</label><br>
+            <input type="file" id="watermark" name="watermark" accept="image/*" required><br>
+
+            <button type="submit">Upload and Process</button>
+        </form>
+
+        <!-- ฟอร์มสำหรับการถอดลายน้ำแบบ Blind -->
+        <form id="blindExtractForm" enctype="multipart/form-data" style="margin-top: 30px;">
+            <h2>Extract Watermark Without Original</h2>
+            <label for="watermarkedOnly">Watermarked Image:</label><br>
+            <input type="file" id="watermarkedOnly" name="watermarkedOnly" accept="image/*" required><br>
+
+            <button type="submit">Upload and Extract Watermark</button>
+        </form>
+
+        <div id="results" style="display:none;">
+            <h2>Results:</h2>
+            <h3>Watermarked Image:</h3>
+            <img id="watermarkedImg" alt="Watermarked Image">
+            <h3>Extracted Watermark:</h3>
+            <img id="extractedWatermark" alt="Extracted Watermark">
+        </div>
+    </div>
+
+    <script>
+        // ฟอร์มสำหรับการฝังและถอดลายน้ำด้วยภาพต้นฉบับ
+        document.getElementById('watermarkForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            var formData = new FormData();
+            var originalFile = document.getElementById('original').files[0];
+            var watermarkFile = document.getElementById('watermark').files[0];
+            
+            if (originalFile) {
+                formData.append('original', originalFile);
+            }
+            formData.append('watermark', watermarkFile);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    document.getElementById('watermarkedImg').src = 'data:image/png;base64,' + data.watermarked_image;
+                    document.getElementById('extractedWatermark').src = 'data:image/png;base64,' + data.extracted_watermark;
+                    document.getElementById('results').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+
+        // ฟอร์มสำหรับการถอดลายน้ำแบบ Blind
+        document.getElementById('blindExtractForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            var formData = new FormData();
+            var watermarkedOnlyFile = document.getElementById('watermarkedOnly').files[0];
+
+            formData.append('watermarkedOnly', watermarkedOnlyFile);
+
+            fetch('/blind_extract', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    console.log("Extracted watermark base64:", data.extracted_watermark);  // Check the base64 string in the console
+                    document.getElementById('extractedWatermark').src = 'data:image/png;base64,' + data.extracted_watermark;
+                    document.getElementById('results').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+
+    </script>
+</body>
+</html>
+
